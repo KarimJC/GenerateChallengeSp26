@@ -1,4 +1,5 @@
 import data from './BigTestCase.json';
+import { MinPriorityQueue } from '@datastructures-js/priority-queue';
 
 interface Sensor {
   id: number;
@@ -17,7 +18,7 @@ interface Edge {
 }
 
 interface PathResult {
-  distance: number;
+  dist: number;
   path: number[];
 }
 
@@ -29,91 +30,87 @@ interface TargetPathInfo {
 }
 
 const solveHeist = (sensors: Sensor[], risks: Risk[], targetSensors: number[]): number[][] => {
-  // Build adjacency list
+   
   const graph: Map<number, number[]> = new Map();
   sensors.forEach(sensor => graph.set(sensor.id, []));
   
   sensors.forEach(sensor => {
     sensor.dependencies.forEach(dep => {
-      graph.get(dep)?.push(sensor.id);
+      graph.get(dep).push(sensor.id);
     });
   });
-  
-  // Build risk map
-  const riskMap: Map<Edge, number> = new Map();
+
+
+ const riskMap: Map<string, number> = new Map();
   risks.forEach(risk => {
-    const edge: Edge = { from: risk.fromSensor, to: risk.toSensor };
-    riskMap.set(edge, risk.risk);
+    const key = `${risk.fromSensor},${risk.toSensor}`;
+    riskMap.set(key, risk.risk);
   });
   
   const getRisk = (from: number, to: number): number => {
-    // Find the edge in the map
-    for (const [edge, risk] of riskMap) {
-      if (edge.from === from && edge.to === to) {
-        return risk;
-      }
-    }
-    return 0;
+    return riskMap.get(`${from},${to}`) ?? 0;
   };
   
   const setRisk = (from: number, to: number, value: number): void => {
-    // Find and update the edge
-    for (const [edge, _] of riskMap) {
-      if (edge.from === from && edge.to === to) {
-        riskMap.set(edge, value);
-        return;
-      }
-    }
-    // If edge doesn't exist, create it
-    riskMap.set({ from, to }, value);
+    riskMap.set(`${from},${to}`, value);
   };
-  
-  // Find root sensors
-  const roots = sensors
+
+  const roots: number[] = sensors
     .filter(s => s.dependencies.length === 0)
     .map(s => s.id)
     .sort((a, b) => a - b);
   
-  // Dijkstra's algorithm
+
   const dijkstra = (start: number, target: number): PathResult | null => {
     const distances: Map<number, number> = new Map();
     const visited: Set<number> = new Set();
-    const pq: [number, number, number[]][] = [[0, start, [start]]];
-    
-    sensors.forEach(s => distances.set(s.id, Infinity));
-    distances.set(start, 0);
-    
-    while (pq.length > 0) {
-      pq.sort((a, b) => {
-        if (a[0] !== b[0]) return a[0] - b[0];
-        return a[2].join(',').localeCompare(b[2].join(','));
-      });
-      
-      const [dist, node, path] = pq.shift()!;
-      
-      if (visited.has(node)) continue;
-      visited.add(node);
-      
-      if (node === target) {
-        return { distance: dist, path };
-      }
-      
-      const neighbors = graph.get(node) || [];
-      for (const neighbor of neighbors) {
-        if (visited.has(neighbor)) continue;
-        
-        const risk = getRisk(node, neighbor);
-        const newDist = dist + risk;
-        
-        if (newDist < distances.get(neighbor)!) {
-          distances.set(neighbor, newDist);
-          pq.push([newDist, neighbor, [...path, neighbor]]);
-        } else if (newDist === distances.get(neighbor)) {
-          pq.push([newDist, neighbor, [...path, neighbor]]);
+    const pq = new MinPriorityQueue<{ dist: number; node: number; path: number[] }>({
+        compare: (a, b) => {
+            if (a.dist !== b.dist) {
+                return a.dist - b.dist; // sort by distance
+            }
+            return a.path.join(',').localeCompare(b.path.join(','));
+            //compares the strings of the path lists lexicographically
         }
-      }
+    });
+
+    sensors.forEach(sensor => distances.set(sensor.id, Infinity));
+
+    pq.enqueue({ dist: 0, node: start, path: [start] });
+
+    while(!pq.isEmpty()) {
+        const { dist, node, path } = pq.dequeue();
+
+        if (visited.has(node)) {
+            continue;
+        }
+
+        visited.add(node);
+
+        if (node === target) {
+            return {dist: dist,
+                path: path
+            }
+        }
+
+        const neighbors = graph.get(node) || [];
+
+        for (const n of neighbors) {
+            if (visited.has(n)) {
+                continue;
+            }
+
+            const newDist = getRisk(node, n) + dist;
+
+            if (newDist < distances.get(n)) {
+                distances.set(n, newDist);
+                pq.enqueue({ dist: newDist, node: n, path: [...path, n]})
+            } else if (newDist === distances.get(n)) {
+                pq.enqueue({ dist: newDist, node: n, path: [...path, n]}) 
+                //important for identifying which path to include if they are the same weight
+            }
+        }
     }
-    
     return null;
   };
   
@@ -127,10 +124,10 @@ const solveHeist = (sensors: Sensor[], risks: Risk[], targetSensors: number[]): 
       const result = dijkstra(root, target);
       
       if (result) {
-        if (result.distance < bestRisk || 
-            (result.distance === bestRisk && root < bestRoot!)) {
+        if (result.dist < bestRisk || 
+            (result.dist === bestRisk && root < bestRoot!)) {
           bestPath = result.path;
-          bestRisk = result.distance;
+          bestRisk = result.dist;
           bestRoot = root;
         }
       }
