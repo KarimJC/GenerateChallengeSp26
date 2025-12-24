@@ -81,7 +81,7 @@ describe("Museum Heist Algorithm Tests", () => {
     });
 
     describe('Path zeroing', () => {
-        it('should reuse zeroed edges for cheaper subsequent paths', () => {
+        it('should reuse zeroed edges for cheaper future paths', () => {
             const sensors = [
                 { id: 0, dependencies: [] },
                 { id: 1, dependencies: [0] },
